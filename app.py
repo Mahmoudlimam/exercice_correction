@@ -3,12 +3,55 @@ from io import BytesIO
 from fpdf import FPDF
 from openrouter_client import correct_exercises, format_correction_output
 
-# Page configuration
+# Page configuration - centered layout works better on mobile
 st.set_page_config(
     page_title="Exercise Correction AI",
     page_icon="📝",
-    layout="wide"
+    layout="centered",
+    initial_sidebar_state="collapsed"  # Collapsed by default on mobile
 )
+
+# Custom CSS for better mobile experience
+st.markdown("""
+<style>
+    /* Mobile-friendly adjustments */
+    .stApp {
+        max-width: 100%;
+    }
+    
+    /* Better button styling on mobile */
+    .stButton > button {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        font-size: 1rem;
+    }
+    
+    /* Better file uploader on mobile */
+    .stFileUploader {
+        width: 100%;
+    }
+    
+    /* Reduce padding on mobile */
+    @media (max-width: 768px) {
+        .block-container {
+            padding: 1rem 1rem !important;
+        }
+        
+        h1 {
+            font-size: 1.5rem !important;
+        }
+        
+        h2 {
+            font-size: 1.25rem !important;
+        }
+    }
+    
+    /* Hide hamburger menu text on mobile */
+    .css-1rs6os {
+        visibility: hidden;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 
 def generate_pdf(correction_data: dict) -> bytes:
@@ -61,130 +104,125 @@ def generate_pdf(correction_data: dict) -> bytes:
     return bytes(pdf.output())
 
 
-# Title and description
-st.title("📝 AI Exercise Correction")
-st.markdown("Upload images of exercises and get AI-generated corrections with detailed answers.")
+# Title
+st.title("📝 Exercise Correction")
+st.caption("Upload exercise images → Get AI corrections")
 
-# Sidebar for settings
+# Sidebar for settings (collapsed by default on mobile)
 with st.sidebar:
     st.header("⚙️ Settings")
     
     # Language selection
     output_language = st.text_input(
-        "Output Language (optional)",
+        "Output Language",
         placeholder="e.g., English, French, Arabic...",
-        help="Leave empty to use the same language as the exercise"
+        help="Leave empty to auto-detect from exercise"
     )
     
     # User preferences
     user_preferences = st.text_area(
-        "User Preferences (optional)",
-        placeholder="e.g., Provide step-by-step solutions, Include formulas used...",
-        help="Add any specific instructions for how you want the corrections"
+        "Preferences",
+        placeholder="e.g., Step-by-step solutions...",
+        help="Custom instructions for corrections",
+        height=100
     )
     
     st.markdown("---")
-    st.markdown("### 📋 Instructions")
-    st.markdown("""
-    1. Upload one or more exercise images
-    2. Optionally set output language
-    3. Add any preferences for correction style
-    4. Click 'Correct Exercises'
-    """)
+    st.markdown("**📋 How to use:**")
+    st.markdown("1. Upload images\n2. Tap 'Correct'\n3. Download results")
 
-# Main content area
-col1, col2 = st.columns([1, 1])
+# Main content - single column for mobile
+st.markdown("### 📤 Upload")
 
-with col1:
-    st.header("📤 Upload Exercises")
+# File uploader
+uploaded_files = st.file_uploader(
+    "Select exercise images",
+    type=["png", "jpg", "jpeg", "webp", "gif"],
+    accept_multiple_files=True,
+    help="You can upload multiple images"
+)
+
+# Show uploaded images in expanders
+if uploaded_files:
+    st.success(f"✓ {len(uploaded_files)} image(s) ready")
+    with st.expander("👁️ Preview images", expanded=False):
+        for i, file in enumerate(uploaded_files):
+            st.image(file, caption=f"{i+1}. {file.name}", use_container_width=True)
+            if i < len(uploaded_files) - 1:
+                st.divider()
+
+# Correction button - full width
+st.markdown("")  # Spacing
+if st.button("🔍 Correct Exercises", type="primary", use_container_width=True):
+    if not uploaded_files:
+        st.error("Please upload at least one image first.")
+    else:
+        with st.spinner("🤖 Analyzing..."):
+            try:
+                # Prepare images for API
+                images = []
+                for file in uploaded_files:
+                    mime_type = file.type if file.type else "image/jpeg"
+                    images.append((file.getvalue(), mime_type))
+                
+                # Call the API
+                result = correct_exercises(
+                    images=images,
+                    output_language=output_language.strip() if output_language and output_language.strip() else None,
+                    user_preferences=user_preferences.strip() if user_preferences and user_preferences.strip() else None
+                )
+                
+                # Store result in session state
+                st.session_state.correction_result = result
+                st.session_state.formatted_result = format_correction_output(result)
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"❌ Error: {str(e)}")
+
+# Display results
+if "correction_result" in st.session_state:
+    st.markdown("---")
+    st.markdown("### ✅ Results")
     
-    # File uploader for multiple images
-    uploaded_files = st.file_uploader(
-        "Upload exercise images",
-        type=["png", "jpg", "jpeg", "webp", "gif"],
-        accept_multiple_files=True,
-        help="You can upload multiple images for multi-page exercises"
+    # Tabs for different views
+    tab1, tab2 = st.tabs(["📄 Corrections", "🔧 JSON"])
+    
+    with tab1:
+        st.markdown(st.session_state.formatted_result)
+    
+    with tab2:
+        st.json(st.session_state.correction_result)
+    
+    # Download buttons - stacked vertically on mobile
+    st.markdown("### 📥 Download")
+    
+    st.download_button(
+        label="📄 Download as Markdown",
+        data=st.session_state.formatted_result,
+        file_name="corrections.md",
+        mime="text/markdown",
+        use_container_width=True
     )
     
-    # Display uploaded images
-    if uploaded_files:
-        st.markdown(f"**{len(uploaded_files)} image(s) uploaded:**")
-        for i, file in enumerate(uploaded_files):
-            with st.expander(f"Image {i+1}: {file.name}"):
-                st.image(file, use_container_width=True)
-
-with col2:
-    st.header("✅ Corrections")
+    try:
+        pdf_bytes = generate_pdf(st.session_state.correction_result)
+        st.download_button(
+            label="📑 Download as PDF",
+            data=pdf_bytes,
+            file_name="corrections.pdf",
+            mime="application/pdf",
+            use_container_width=True
+        )
+    except Exception as e:
+        st.warning(f"PDF unavailable: {str(e)}")
     
-    # Correction button
-    if st.button("🔍 Correct Exercises", type="primary", use_container_width=True):
-        if not uploaded_files:
-            st.error("Please upload at least one exercise image.")
-        else:
-            with st.spinner("Analyzing exercises and generating corrections..."):
-                try:
-                    # Prepare images for API
-                    images = []
-                    for file in uploaded_files:
-                        # Get mime type from file extension
-                        mime_type = f"image/{file.type.split('/')[-1]}" if file.type else "image/jpeg"
-                        images.append((file.getvalue(), mime_type))
-                    
-                    # Call the API
-                    result = correct_exercises(
-                        images=images,
-                        output_language=output_language if output_language.strip() else None,
-                        user_preferences=user_preferences if user_preferences.strip() else None
-                    )
-                    
-                    # Store result in session state
-                    st.session_state.correction_result = result
-                    st.session_state.formatted_result = format_correction_output(result)
-                    
-                except Exception as e:
-                    st.error(f"Error generating corrections: {str(e)}")
-    
-    # Display results
-    if "correction_result" in st.session_state:
-        # Tabs for different views
-        tab1, tab2 = st.tabs(["📄 Formatted", "🔧 Raw JSON"])
-        
-        with tab1:
-            st.markdown(st.session_state.formatted_result)
-        
-        with tab2:
-            st.json(st.session_state.correction_result)
-        
-        # Download buttons
-        col_md, col_pdf = st.columns(2)
-        
-        with col_md:
-            st.download_button(
-                label="📥 Download MD",
-                data=st.session_state.formatted_result,
-                file_name="corrections.md",
-                mime="text/markdown",
-                use_container_width=True
-            )
-        
-        with col_pdf:
-            try:
-                pdf_bytes = generate_pdf(st.session_state.correction_result)
-                st.download_button(
-                    label="📥 Download PDF",
-                    data=pdf_bytes,
-                    file_name="corrections.pdf",
-                    mime="application/pdf",
-                    use_container_width=True
-                )
-            except Exception as e:
-                st.error(f"PDF generation error: {str(e)}")
+    # Clear button
+    if st.button("🗑️ Clear Results", use_container_width=True):
+        del st.session_state.correction_result
+        del st.session_state.formatted_result
+        st.rerun()
 
 # Footer
 st.markdown("---")
-st.markdown(
-    "<div style='text-align: center; color: gray;'>"
-    "Powered by OpenRouter AI | Model: google/gemini-3-flash-preview"
-    "</div>",
-    unsafe_allow_html=True
-)
+st.caption("Powered by OpenRouter AI • Gemini 3 Flash")
