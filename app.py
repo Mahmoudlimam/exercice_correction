@@ -54,15 +54,22 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+import os
+
+# Get the directory where this script is located
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+FONTS_DIR = os.path.join(SCRIPT_DIR, 'fonts')
+
+
 def generate_pdf(correction_data: dict) -> bytes:
     """Generate a PDF from correction data."""
     pdf = FPDF()
     pdf.add_page()
     
-    # Use a Unicode font for multi-language support
-    pdf.add_font('DejaVu', '', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')
-    pdf.add_font('DejaVu', 'B', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf')
-    pdf.add_font('DejaVu', 'I', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf')
+    # Use a Unicode font for multi-language support (from local fonts folder)
+    pdf.add_font('DejaVu', '', os.path.join(FONTS_DIR, 'DejaVuSans.ttf'))
+    pdf.add_font('DejaVu', 'B', os.path.join(FONTS_DIR, 'DejaVuSans-Bold.ttf'))
+    pdf.add_font('DejaVu', 'I', os.path.join(FONTS_DIR, 'DejaVuSans-Oblique.ttf'))
     
     pdf.set_font('DejaVu', '', 12)
     
